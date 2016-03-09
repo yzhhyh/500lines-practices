@@ -40,6 +40,11 @@ class CodeBuilder(object):
         self.indent_level -= self.INDENT_STEP
 
     def add_section(self):
+        '''
+        将模板里面使用的变量赋值
+        因为__str__方法会对code里每一个元素都调用str，
+        所以外部codeBuilder调用str时，也会对里面的codeBuilder调用str
+        '''
         section = CodeBuilder(self.indent_level)
         self.code.append(section)
         return section
@@ -48,6 +53,7 @@ class CodeBuilder(object):
         return "".join(str(c) for c in self.code)
 
     def get_globals(self):
+        # print self.indent_level
         assert self.indent_level == 0
         python_source = str(self)
         global_namespace = {}
@@ -68,6 +74,7 @@ class Templite(object):
         code = CodeBuilder()
         code.add_line("def render_fuction(context, do_dots):")
         code.indent()
+        #将模板里面使用的变量赋值
         vars_code = code.add_section()
         code.add_line("result = []")
         code.add_line("append_result = result.append")
@@ -85,11 +92,11 @@ class Templite(object):
             if len(buffered) == 1:
                 code.add_line("append_result(%s)" % buffered[0])
             elif len(buffered) >1:
-                code.add_line("extend_result(%s)" % ", ".join(buffered))
+                code.add_line("extend_result([%s])" % ", ".join(buffered))
             del buffered[:]
 
         ops_stack = []
-        tokens = re.split(r"(?s)({{.*?}} | {%.*?%} | {#.*?#})", text)
+        tokens = re.split(r"(?s)({{.*?}}|{%.*?%}|{#.*?#})", text)
 
         for token in tokens:
             if token.startswith('{#'):
@@ -97,7 +104,7 @@ class Templite(object):
 
             elif token.startswith('{{'):
                 expr = self._expr_code(token[2:-2].strip())
-                buffered.append("to_str(%s)") % expr
+                buffered.append("to_str(%s)" % expr)
 
             elif token.startswith('{%'):
                 flush_output()
@@ -119,8 +126,9 @@ class Templite(object):
                         "for c_%s in %s:" %(
                             words[1],
                             self._expr_code(words[3])
-                            )
                         )
+                    )
+                    code.indent()
 
                 elif words[0].startswith('end'):
                     if len(words) != 1:
@@ -156,6 +164,7 @@ class Templite(object):
         code.add_line("return ''.join(result)")
         code.dedent()
         self._render_function = code.get_globals()['render_fuction']
+        self.code = code
 
     def _expr_code(self, expr):
         '''
@@ -195,6 +204,7 @@ class Templite(object):
         render_context = dict(self.context)
         if context:
             render_context.update(context)
+            print render_context
         return self._render_function(render_context, self._do_dots)
 
     def _do_dots(self, value, *dots):
@@ -218,10 +228,13 @@ templite = Templite('''
     ''',
     {'upper': str.upper},
 )
+with open("b.py","w") as f:
+    f.write(str(templite.code))
 
 # Later, use it to render some data.
 text = templite.render({
     'name': "Ned",
     'topics': ['Python', 'Geometry', 'Juggling'],
 })
+# print templite.code
 print text
