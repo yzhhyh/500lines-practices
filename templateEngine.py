@@ -67,8 +67,13 @@ class Templite(object):
         self.context = {}
         for context in contexts:
             self.context.update(context)
-        #为了提高渲染出来的方法的执行速度，将所有变量放入self.all_vars中
+        #将模板中所有使用到的变量放入all_vars中，然后放在vars_code中，以便在render_function中赋值变量
         self.all_vars = set()
+        '''
+        设置loop_vars是因为for循环的变量可能会被使用(比如放在{{}}中)，
+        而{{}}里的变量会被解析放入all_vars中，所以要定义这个变量，
+        以便render_function赋值变量的时候将循环变量剔除掉
+        '''
         self.loop_vars = set()
 
         code = CodeBuilder()
@@ -77,6 +82,7 @@ class Templite(object):
         #将模板里面使用的变量赋值
         vars_code = code.add_section()
         code.add_line("result = []")
+        #将append和extend方法赋值给变量，以后使用的时候不用去查找append和extend方法，提高一点速度
         code.add_line("append_result = result.append")
         code.add_line("extend_result = result.extend")
         code.add_line("to_str = str")
@@ -94,8 +100,13 @@ class Templite(object):
             elif len(buffered) >1:
                 code.add_line("extend_result([%s])" % ", ".join(buffered))
             del buffered[:]
-
+        '''
+        因为for和if语句都会有结束标签，为了开始标签和结束标签一一对应，
+        使用一个栈来保存操作符（for、if），每次遇到操作符便将其压入栈，
+        遇到对应的结束标签，便出栈一个元素进行比较，从而保证是否一一对应
+        '''
         ops_stack = []
+        #将html内容分割，然后一一解析
         tokens = re.split(r"(?s)({{.*?}}|{%.*?%}|{#.*?#})", text)
 
         for token in tokens:
@@ -146,6 +157,7 @@ class Templite(object):
 
             else:
                 if token:
+                    #这使用repr因为可以给html内容加上引号，否则会出错
                     buffered.append(repr(token))
 
         if ops_stack:
@@ -168,7 +180,7 @@ class Templite(object):
 
     def _expr_code(self, expr):
         '''
-
+        解析变量或者表达式，同时把结果放入all_vars
         '''
 
         if "|" in expr:
@@ -219,9 +231,11 @@ class Templite(object):
         return value
 
 
-# Make a Templite object.
+
 templite = Templite('''
+    {% if name %}
     <h1>Hello {{name|upper}}!</h1>
+    {% endif %}
     {% for topic in topics %}
         <p>You are interested in {{topic}}.</p>
     {% endfor %}
@@ -231,9 +245,9 @@ templite = Templite('''
 with open("b.py","w") as f:
     f.write(str(templite.code))
 
-# Later, use it to render some data.
+
 text = templite.render({
-    'name': "Ned",
+    'name': "ned",
     'topics': ['Python', 'Geometry', 'Juggling'],
 })
 # print templite.code
